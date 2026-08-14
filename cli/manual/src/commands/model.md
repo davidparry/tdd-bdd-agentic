@@ -1,0 +1,128 @@
+# bdd model
+
+LLM model discovery and selection. The CLI talks to a local
+[Ollama](https://ollama.com) — no cloud calls, no tokens — and uses
+the model only to *polish* deterministic templates in the generation
+commands. Everything works without a model; generation just stays at
+template quality.
+
+```text
+Usage: bdd model [OPTIONS] <COMMAND>
+
+Commands: list, current, use
+```
+
+## How a model is resolved
+
+Highest priority first:
+
+1. **`--model` flag** — this invocation only, never persisted.
+2. **Configuration** — the `model` key in `.bdd-mcp.toml` under the
+   project root, written by `bdd model use`.
+3. **Discovery** — the first model installed in Ollama, as a
+   session-only default. Nothing is written to disk.
+
+If Ollama is unreachable or has no models, LLM-backed generation falls
+back to deterministic templates.
+
+---
+
+## bdd model list
+
+List the models installed in Ollama, marking the one that would
+currently be used.
+
+```bash
+bdd model list
+```
+
+```text
+Models available in Ollama:
+* qwen3:30b   (configured)
+  qwen3:8b
+  llama3:8b
+```
+
+With no configuration, the marker moves to the discovered session
+default. If Ollama is down, the command fails with exit status 1 and
+says the provider is unreachable.
+
+---
+
+## bdd model current
+
+Show the resolved model and where it came from.
+
+```bash
+bdd model current
+```
+
+```text
+Configured model: qwen3:30b
+```
+
+With nothing configured but models installed, the first one is the
+session default and the output tells you it is not saved:
+
+```text
+Model set for this session: qwen3:8b (not saved - keep it with: bdd model use qwen3:8b).
+```
+
+The same announcement appears when the
+[interactive shell](../interactive-shell.md) starts.
+
+---
+
+## bdd model use
+
+Persist a model choice in the project's configuration.
+
+```text
+Usage: bdd model use [OPTIONS] <MODEL_NAME>
+```
+
+```bash
+bdd model use qwen3:30b
+```
+
+```text
+Configured model: qwen3:30b
+Written to /Users/you/code/calculator/.bdd-mcp.toml
+```
+
+The choice is validated against Ollama's installed models — a name
+Ollama does not have is rejected rather than silently saved.
+
+## The [llm] configuration block
+
+Everything model-related lives under `[llm]` in `.bdd-mcp.toml`:
+
+```toml
+[llm]
+model = "qwen3:8b"                    # persisted by bdd model use
+endpoint = "http://localhost:11434"   # the Ollama endpoint
+timeout_seconds = 300                 # generation timeout (default 300)
+```
+
+`timeout_seconds` bounds how long one generation call may take. Large
+prompts — an implementation attempt carries the requirement, the
+failure details, and every project source file — can keep a local
+model generating for minutes; when the budget runs out the error names
+it explicitly (`no reply within 300s ... set timeout_seconds under
+[llm]`). Raise it for big projects or slower models.
+
+## Which commands actually use the model
+
+| Uses the model | Never touches it |
+| --- | --- |
+| `spec draft` (description wizard, findings rewording) | `test`, `state`, `refactor` |
+| `steps generate` | `spec` (other subcommands) |
+| `unittest generate` | `feature`, `scenario`, `changes` |
+| `implement` | `init`, `inspect`, `validate` |
+| `greenfield` (drafting, generation, implementation) | |
+
+## See also
+
+- [Global flags](../global-flags.md) — the `--model` override.
+- [`bdd steps generate`](steps.md#source-template-or-llm) — how LLM
+  output is validated before it can stage.
