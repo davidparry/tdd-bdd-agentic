@@ -1,0 +1,143 @@
+# CI for the workshop repo.
+#
+# Four jobs, four meanings:
+#   - build-and-test: must be green on every branch. Runs the full Maven
+#     verify across kata, mcp-server, and mcp-client - JUnit + Cucumber
+#     (BDD) suites, JaCoCo 100% coverage gates, SpotBugs, and PMD - and
+#     publishes every report as a build artifact.
+#   - cli: must be green on every branch. Runs the Rust bdd CLI's tests
+#     (unit + cucumber), clippy, and fmt from cli/.
+#   - class-completeness: asserts the 60-minute class deliverables exist
+#     (REQ-003 implemented, REQ-007 drafted). Runs only on the complete
+#     branch - trunk is the starting point attendees clone, so the check
+#     would fail there by definition.
+#   - workshop-start: the inverse gate. Asserts the workshop STARTING state
+#     (REQ-003..006 pending, no REQ-007, no scenarios beyond REQ-001/002).
+#     Runs only on trunk, catching any accidental "completeness leak" into
+#     the branch attendees clone.
+name: CI
+
+on:
+  push:
+    branches: [trunk, complete]
+  pull_request:
+    branches: [trunk, complete]
+
+jobs:
+  build-and-test:
+    name: Build, tests (JUnit + Cucumber), quality gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+
+      - name: Verify (tests, JaCoCo 100%, SpotBugs, PMD)
+        run: mvn -B verify
+
+      - name: Upload test and quality reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: reports-${{ github.ref_name }}-${{ github.run_number }}
+          if-no-files-found: warn
+          path: |
+            **/target/surefire-reports/**
+            **/target/cucumber-report.html
+            **/target/cucumber-report.json
+            **/target/site/jacoco/**
+            **/target/spotbugs.html
+            **/target/spotbugsXml.xml
+            **/target/pmd.xml
+            **/target/site/pmd.html
+
+  cli:
+    name: bdd CLI (tests, clippy, fmt, coverage)
+    runs-on: ubuntu-latest
+    # contents: write lets the badge step push the coverage JSON to the
+    # badges branch; everything else in this job only reads.
+    permissions:
+      contents: write
+    defaults:
+      run:
+        working-directory: cli
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: llvm-tools-preview
+
+      - uses: taiki-e/install-action@cargo-llvm-cov
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: cli
+
+      - name: Tests (unit + cucumber)
+        run: cargo test
+
+      - name: Clippy
+        run: cargo clippy --all-targets -- -D warnings
+
+      - name: Format
+        run: cargo fmt --check
+
+      # Line coverage over the library. main.rs (the composition root)
+      # is excluded - see cli/README.md for the documented metric. The
+      # gate keeps the badge honest: coverage below 99% fails the build
+      # instead of silently shipping a stale-looking green badge.
+      - name: Coverage
+        id: coverage
+        run: |
+          cargo llvm-cov --ignore-filename-regex 'main\.rs' --summary-only --fail-under-lines 99
+          PCT=$(cargo llvm-cov report --ignore-filename-regex 'main\.rs' --json \
+            | jq -r '.data[0].totals.lines.percent * 10 | round / 10')
+          echo "percent=$PCT" >> "$GITHUB_OUTPUT"
+
+      # shields.io renders the badge straight from this JSON on the
+      # badges branch, so the README badge updates on every trunk push
+      # without any external coverage service or token.
+      - name: Publish the coverage badge (trunk pushes only)
+        if: github.event_name == 'push' && github.ref_name == 'trunk'
+        working-directory: ${{ github.workspace }}
+        run: |
+          PCT='${{ steps.coverage.outputs.percent }}'
+          if awk "BEGIN { exit !($PCT >= 95) }"; then COLOR=brightgreen
+          elif awk "BEGIN { exit !($PCT >= 85) }"; then COLOR=green
+          else COLOR=orange; fi
+          printf '{"schemaVersion":1,"label":"cli coverage","message":"%s%% lines","color":"%s"}\n' \
+            "$PCT" "$COLOR" > /tmp/coverage.json
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout --orphan badges
+          git rm -rf --quiet .
+          cp /tmp/coverage.json coverage.json
+          git add coverage.json
+          git commit -m "cli coverage badge: ${PCT}% lines"
+          git push --force origin badges
+
+  class-completeness:
+    name: Class completeness (complete branch only)
+    if: github.ref_name == 'complete' || github.base_ref == 'complete'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the 60-minute class deliverables
+        run: ./scripts/check-class-complete.sh
+
+  workshop-start:
+    name: Workshop start state (trunk only)
+    if: github.ref_name == 'trunk' || github.base_ref == 'trunk'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Check the workshop starting point is intact
+        run: ./scripts/check-workshop-start.sh
