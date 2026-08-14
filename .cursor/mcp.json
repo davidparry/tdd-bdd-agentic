@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "tdd-workflow": {
+      "command": "java",
+      "args": [
+        "-Dworkshop.root=/Users/davidparry/code/misc/tdd-bdd-agentic",
+        "-jar",
+        "/Users/davidparry/code/misc/tdd-bdd-agentic/mcp-server/target/tdd-mcp-server.jar"
+      ]
+    }
+  }
+}
