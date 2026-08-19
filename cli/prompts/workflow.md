@@ -1,0 +1,81 @@
+The bdd CLI drives a spec-driven BDD/TDD workflow. The requirements spec
+(requirements/requirements.json) is the source of truth. Every requirement
+(REQ-XXX) moves from status "pending" to "implemented" through the loop
+below. The goal: every requirement implemented, validated, and committed.
+
+STATES
+
+TDD phases, recorded in .bdd-state.json by bdd test and bdd refactor:
+- START: no test run is recorded yet.
+- RED: the last test run failed.
+- GREEN: the last test run passed.
+- REFACTOR: a refactor is in progress on a green bar.
+
+Requirement statuses: "pending" (not done yet) and "implemented" (done -
+the spec names its featureFile and a scenario tagged @REQ-XXX exists).
+
+The staging area: every authoring command stages its edits instead of
+writing the working tree. Review with bdd changes show, apply with bdd
+changes commit, drop with bdd changes discard. Staged changes always come
+first - nothing else moves until they are committed or discarded.
+
+TWO TEST ALTITUDES, ONE BAR
+
+This is the BDD outside-in double loop. The scenario tagged @REQ-XXX is
+the outer, acceptance-level loop; the unit test (Req*Test) is the inner,
+TDD-level loop. bdd test runs both under one shared RED/GREEN bar: a
+failing scenario step means step-definition or production work, a failing
+unit test means production work at the unit level.
+
+THE LOOP FOR ONE REQUIREMENT
+
+1. bdd spec draft - word the requirement (title, story, Given/When/Then
+   acceptance criteria); validate and refine findings drive rewording
+   until clean; then bdd changes commit.
+2. bdd scenario add --feature <file> --req REQ-XXX --name <name> --step
+   ... - formulate the acceptance criteria as a Gherkin scenario tagged
+   @REQ-XXX (bdd feature create first if the feature file does not
+   exist); then bdd changes commit.
+3. bdd steps generate - scaffold step definitions for undefined steps;
+   then bdd changes commit.
+4. bdd unittest generate REQ-XXX - scaffold the failing unit test from
+   the acceptance criteria; then bdd changes commit.
+5. bdd test - expect RED: the new scenario and unit test fail because
+   the behavior is not implemented.
+6. bdd implement REQ-XXX - the model writes production code (or
+   implement by hand); then bdd changes commit and bdd test again.
+   Repeat while the bar stays RED.
+7. On GREEN, optionally bdd refactor --note <what> - clean up, then
+   bdd test to prove the bar stayed green.
+8. bdd spec mark-implemented REQ-XXX - flips the status and records the
+   featureFile (only allowed on GREEN); then bdd validate (it checks the
+   @REQ-XXX scenario exists), then bdd changes commit.
+9. Back to step 1 for the next pending requirement, or done.
+
+COMMANDS
+
+- bdd status: where every requirement stands and the one next step.
+- bdd state: the current TDD phase and last run counts.
+- bdd test [--feature <file>] [--scenario <name>]: run the tests and
+  move the phase to RED or GREEN.
+- bdd spec list | show REQ-XXX | draft | validate | refine REQ-XXX |
+  mark-implemented REQ-XXX: the requirements spec tools.
+- bdd feature list | show <path> | create: feature files.
+- bdd scenario add | update | delete: tagged scenarios (staged).
+- bdd steps missing | generate: step definitions.
+- bdd unittest generate REQ-XXX: the unit test scaffold.
+- bdd implement REQ-XXX: a model implementation attempt (staged).
+- bdd refactor --note <what>: begin a refactor (GREEN only).
+- bdd changes show | commit | discard: the staging area.
+- bdd validate: parse staged Gherkin and validate the effective spec.
+
+INVARIANTS
+
+- Never refactor on RED - make the tests pass first.
+- Never mark a requirement implemented off GREEN.
+- Every mutation is staged and reviewed before it touches the working
+  tree; run bdd validate before bdd changes commit.
+- One requirement in flight at a time; staged changes are handled before
+  anything else.
+- The loop for a requirement closes only when it is marked implemented,
+  validated, and committed.
