@@ -469,7 +469,8 @@ cargo test --test cucumber   # spec-driven cucumber scenarios only
   `bdd` binary and drives the whole interactive `greenfield` loop against
   a real Ollama model until a requirement is implemented — see
   [Live end-to-end test: the greenfield loop](#live-end-to-end-test-the-greenfield-loop).
-- Coverage is 100% of reachable lines over the library. Measure it with:
+- Coverage is gated at 97% of reachable lines over the library (CI
+  fails the `cli` job below that). Measure it with:
 
 ```bash
 cargo llvm-cov --ignore-filename-regex 'main\.rs' --summary-only
